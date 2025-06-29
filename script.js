@@ -5,23 +5,22 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 const markerCluster = L.markerClusterGroup();
 map.addLayer(markerCluster);
 
-let allMarkers = [];
-
 fetch(csvURL)
   .then(res => res.text())
   .then(csv => {
     const rows = csv.trim().split('\n').slice(1);
-    rows.forEach(r => {
-      const cols = r.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g); // カンマ区切りを安全に分割
+    rows.forEach(row => {
+      const cols = row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
       if (!cols || cols.length < 6) return;
 
       const [title, lat, lng, url, country, category] = cols.map(c => c.replace(/^"|"$/g, ''));
-      const cam = { title, lat: parseFloat(lat), lng: parseFloat(lng), url, country, category };
+      const iframe =
+        url.includes('youtube.com/embed/')
+          ? `<iframe width="300" height="169" src="${url}" frameborder="0" allowfullscreen></iframe>`
+          : `<a href="${url}" target="_blank">ライブ映像を開く</a>`;
 
-      const iframe = `<iframe width="300" height="169" src="${cam.url}" frameborder="0" allowfullscreen></iframe>`;
-      const marker = L.marker([cam.lat, cam.lng]).bindPopup(`<strong>${cam.title}</strong><br>${iframe}`);
-      marker.meta = cam;
+      const content = `<strong>${title}</strong><br>${iframe}`;
+      const marker = L.marker([parseFloat(lat), parseFloat(lng)]).bindPopup(content);
       markerCluster.addLayer(marker);
-      allMarkers.push(marker);
     });
   });
