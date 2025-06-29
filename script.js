@@ -14,6 +14,8 @@ fetch(csvURL)
       if (!cols || cols.length < 6) return;
 
       const [title, lat, lng, url, country, category] = cols.map(c => c.replace(/^"|"$/g, ''));
+      if (!lat || !lng || isNaN(lat) || isNaN(lng)) return;
+
       const iframe =
         url.includes('youtube.com/embed/')
           ? `<iframe width="300" height="169" src="${url}" frameborder="0" allowfullscreen></iframe>`
@@ -21,6 +23,11 @@ fetch(csvURL)
 
       const popup = `<strong>${title}</strong><br>${iframe}`;
       const marker = L.marker([parseFloat(lat), parseFloat(lng)]).bindPopup(popup);
+
+      // 地図に追加してすぐにポップアップを開く
+      marker.addTo(map).openPopup();
+
+      // クラスタに追加（必要なら）
       markerCluster.addLayer(marker);
     });
   });
