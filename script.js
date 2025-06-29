@@ -1,4 +1,4 @@
-const csvURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSZuJ9aHJIgGbXgbdu5-6hLA3GcS2zmZjAlygwQj0jHS9jM47tNcCOE89zlIF_JMvTYMefVaQ4z_DJM/pub?gid=345912978&single=true&output=csv'; // ←ここを書き換えてください
+const csvURL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSZuJ9aHJIgGbXgbdu5-6hLA3GcS2zmZjAlygwQj0jHS9jM47tNcCOE89zlIF_JMvTYMefVaQ4z_DJM/pub?gid=345912978&single=true&output=csv';
 
 const map = L.map('map').setView([20, 0], 2);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -19,8 +19,8 @@ fetch(csvURL)
           ? `<iframe width="300" height="169" src="${url}" frameborder="0" allowfullscreen></iframe>`
           : `<a href="${url}" target="_blank">ライブ映像を開く</a>`;
 
-      const content = `<strong>${title}</strong><br>${iframe}`;
-      const marker = L.marker([parseFloat(lat), parseFloat(lng)]).bindPopup(content);
+      const popup = `<strong>${title}</strong><br>${iframe}`;
+      const marker = L.marker([parseFloat(lat), parseFloat(lng)]).bindPopup(popup);
       markerCluster.addLayer(marker);
     });
   });
