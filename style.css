@@ -1,0 +1,30 @@
+body {
+  font-family: sans-serif;
+  margin: 0;
+}
+h1 {
+  text-align: center;
+  font-size: 1.5em;
+  padding: 0.5em;
+}
+#filters {
+  text-align: center;
+  margin: 10px;
+}
+select {
+  padding: 5px;
+  margin: 0 5px;
+  font-size: 1em;
+}
+#map {
+  height: 85vh;
+  width: 100%;
+}
+@media (max-width: 768px) {
+  h1 {
+    font-size: 1.2em;
+  }
+  select {
+    font-size: 0.9em;
+  }
+}
