@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>前走車 発進通知・接近警告 WEBアプリ ローカルYOLO版</title>
+  <meta name="theme-color" content="#111111" />
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <style>
+    :root {
+      --bg: #0b1020; --panel: #151c31; --text: #f1f5ff; --muted: #a7b3d1;
+      --ok: #2dd4bf; --warn: #f59e0b; --danger: #ef4444; --accent: #60a5fa;
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: linear-gradient(180deg, #09101b 0%, #111827 100%); color: var(--text); }
+    .app { width:min(100%,1080px); margin:0 auto; padding:12px; }
+    .card { background:rgba(21,28,49,.95); border:1px solid rgba(255,255,255,.08); border-radius:16px; box-shadow:0 12px 32px rgba(0,0,0,.22); overflow:hidden; margin-bottom:12px; }
+    .header { padding:14px 16px 10px; }
+    h1 { margin:0 0 6px; font-size:1.15rem; }
+    .sub { color:var(--muted); font-size:.92rem; line-height:1.45; }
+    .video-wrap { position:relative; background:#000; aspect-ratio:16/9; width:100%; overflow:hidden; border-radius:14px; }
+    video, canvas.overlay { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
+    .status-badge { position:absolute; left:10px; top:10px; z-index:5; padding:8px 10px; border-radius:999px; font-size:.85rem; font-weight:700; background:rgba(0,0,0,.55); backdrop-filter:blur(6px); border:1px solid rgba(255,255,255,.15); }
+    .status-ok { color:#d1fae5; } .status-warn { color:#fde68a; } .status-danger { color:#fecaca; }
+    .grid { display:grid; grid-template-columns:1fr; gap:12px; padding:12px; }
+    @media (min-width: 920px){ .grid-2 { grid-template-columns:1.2fr .8fr; } }
+    .controls { padding:12px; display:grid; gap:10px; }
+    .panel { padding:12px; background:rgba(255,255,255,.02); border-radius:14px; border:1px solid rgba(255,255,255,.08); }
+    .row { display:grid; grid-template-columns:1fr auto; gap:12px; align-items:center; }
+    .row label { font-size:.93rem; }
+    .value { color:var(--accent); font-weight:700; font-size:.95rem; min-width:70px; text-align:right; }
+    input[type="range"], select { width:100%; }
+    .buttons { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; }
+    button { appearance:none; border:none; border-radius:12px; padding:12px 14px; font-size:.96rem; font-weight:700; color:white; background:linear-gradient(180deg,#2563eb,#1d4ed8); cursor:pointer; }
+    button.secondary { background:linear-gradient(180deg,#334155,#1f2937); }
+    button.warn { background:linear-gradient(180deg,#f59e0b,#d97706); }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .kv { display:grid; grid-template-columns:1fr auto; gap:10px; padding:6px 0; border-bottom:1px dashed rgba(255,255,255,.08); font-size:.93rem; }
+    .kv:last-child { border-bottom:none; }
+    .kv .k { color:var(--muted); } .kv .v { font-weight:700; }
+    .tips { padding:0 12px 12px; color:var(--muted); line-height:1.5; font-size:.9rem; }
+    .footer-note { padding:0 12px 12px; font-size:.85rem; color:#cbd5e1; }
+    .pill { display:inline-block; padding:2px 8px; border-radius:999px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.1); margin-left:6px; font-size:.8rem; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="card">
+      <div class="header">
+        <h1>前走車 発進通知・接近警告 WEBアプリ<span class="pill">ローカルYOLO版</span></h1>
+        <div class="sub">
+          <b>YOLOv8n</b> を優先して前方の車・トラック・バス・バイクを検出します。<br>
+          ローカル配置した <b>YOLOv8n</b> を優先して使います。見つからない場合は理由を表示し、必要なら <b>安定版 COCO-SSD</b> に切り替えられます。実運転の安全判断には使わず、必ず目視優先で使ってください。
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <div>
+          <div class="video-wrap">
+            <div id="statusBadge" class="status-badge status-ok">待機中</div>
+            <video id="video" playsinline autoplay muted></video>
+            <canvas id="overlay" class="overlay"></canvas>
+          </div>
+        </div>
+        <div class="controls">
+          <div class="buttons">
+            <button id="startBtn">開始</button>
+            <button id="stopBtn" class="secondary" disabled>停止</button>
+            <button id="warnTestBtn" class="warn">警告音テスト</button>
+            <button id="goTestBtn" class="secondary">発進通知テスト</button>
+          </div>
+
+          <div class="panel">
+            <div class="row"><label for="engineMode">検出エンジン</label><div id="engineLabel" class="value">YOLO優先</div></div>
+            <select id="engineMode">
+              <option value="yolo">YOLOローカル優先</option>
+              <option value="coco">安定版 COCO-SSD</option>
+              <option value="auto">自動切替</option>
+            </select>
+          </div>
+
+          <div class="panel">
+            <div class="row"><label for="nearThreshold">接近警告のしきい値</label><div id="nearValue" class="value">24%</div></div>
+            <input id="nearThreshold" type="range" min="10" max="45" value="24" step="1" />
+          </div>
+          <div class="panel">
+            <div class="row"><label for="moveThreshold">発進検知のしきい値</label><div id="moveValue" class="value">3.5%</div></div>
+            <input id="moveThreshold" type="range" min="1.5" max="10" value="3.5" step="0.1" />
+          </div>
+          <div class="panel">
+            <div class="row"><label for="stationarySeconds">停止判定まで</label><div id="stationaryValue" class="value">1.5秒</div></div>
+            <input id="stationarySeconds" type="range" min="0.8" max="4" value="1.5" step="0.1" />
+          </div>
+          <div class="panel">
+            <div class="row"><label for="minScore">AI検出信頼度</label><div id="minScoreValue" class="value">55%</div></div>
+            <input id="minScore" type="range" min="25" max="85" value="55" step="1" />
+          </div>
+          <div class="panel">
+            <div class="row"><label for="inferInterval">推論間隔</label><div id="inferIntervalValue" class="value">650ms</div></div>
+            <input id="inferInterval" type="range" min="250" max="1500" value="650" step="50" />
+          </div>
+
+          <div class="panel">
+            <div class="kv"><div class="k">現在のエンジン</div><div class="v" id="activeEngineText">未開始</div></div>
+            <div class="kv"><div class="k">モデル状態</div><div class="v" id="modelText">未読み込み</div></div>
+            <div class="kv"><div class="k">前走車候補</div><div class="v" id="targetText">なし</div></div>
+            <div class="kv"><div class="k">接近スコア</div><div class="v" id="nearScoreText">0%</div></div>
+            <div class="kv"><div class="k">移動量</div><div class="v" id="motionText">0%</div></div>
+            <div class="kv"><div class="k">停止状態</div><div class="v" id="stoppedText">いいえ</div></div>
+            <div class="kv"><div class="k">通知状態</div><div class="v" id="goStateText">待機中</div></div>
+            <div class="kv"><div class="k">失敗理由</div><div class="v mono" id="errorText">なし</div></div>
+            <div class="kv"><div class="k">ローカルモデル</div><div class="v mono" id="localModelText">確認前</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="tips">
+        使い方: GitHub Pages などの <b>HTTPS</b> で開き、「開始」を押してください。初回はモデル読込に時間がかかります。<br>
+        YOLOが重い場合は「推論間隔」を長くするか、「安定版 COCO-SSD」に切り替えてください。
+      </div>
+      <div class="footer-note">
+        この版は <b>./models/webnn/yolov8n/onnx/model_fp16.onnx</b> のローカル配置を優先します。ローカルモデルがあれば外部モデル配信の影響を減らせます。
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3"></script>
+  <script type="module">
+    import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1';
+
+    env.allowLocalModels = true;
+    env.useBrowserCache = true;
+    if (env.backends?.onnx?.wasm) {
+      env.backends.onnx.wasm.numThreads = 1;
+      env.backends.onnx.wasm.proxy = false;
+    }
+
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const overlayCtx = overlay.getContext('2d');
+    const offscreen = document.createElement('canvas');
+    const offCtx = offscreen.getContext('2d', { willReadFrequently: false });
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const warnTestBtn = document.getElementById('warnTestBtn');
+    const goTestBtn = document.getElementById('goTestBtn');
+    const nearThreshold = document.getElementById('nearThreshold');
+    const moveThreshold = document.getElementById('moveThreshold');
+    const stationarySeconds = document.getElementById('stationarySeconds');
+    const minScore = document.getElementById('minScore');
+    const inferInterval = document.getElementById('inferInterval');
+    const engineMode = document.getElementById('engineMode');
+
+    const nearValue = document.getElementById('nearValue');
+    const moveValue = document.getElementById('moveValue');
+    const stationaryValue = document.getElementById('stationaryValue');
+    const minScoreValue = document.getElementById('minScoreValue');
+    const inferIntervalValue = document.getElementById('inferIntervalValue');
+    const engineLabel = document.getElementById('engineLabel');
+
+    const statusBadge = document.getElementById('statusBadge');
+    const modelText = document.getElementById('modelText');
+    const activeEngineText = document.getElementById('activeEngineText');
+    const targetText = document.getElementById('targetText');
+    const nearScoreText = document.getElementById('nearScoreText');
+    const motionText = document.getElementById('motionText');
+    const stoppedText = document.getElementById('stoppedText');
+    const goStateText = document.getElementById('goStateText');
+    const errorText = document.getElementById('errorText');
+    const localModelText = document.getElementById('localModelText');
+
+    let cocoModel = null;
+    let yoloDetector = null;
+    let stream = null;
+    let running = false;
+    let rafId = null;
+    let detectionBusy = false;
+    let audioCtx = null;
+    let lastInferAt = 0;
+
+    let smoothedNear = 0;
+    let smoothedMotion = 0;
+    let prevTarget = null;
+    let targetLostCount = 0;
+    let stoppedStart = null;
+    let wasStopped = false;
+    let lastWarnTime = 0;
+    let lastGoTime = 0;
+
+    function updateLabels() {
+      nearValue.textContent = Number(nearThreshold.value).toFixed(0) + '%';
+      moveValue.textContent = Number(moveThreshold.value).toFixed(1) + '%';
+      stationaryValue.textContent = Number(stationarySeconds.value).toFixed(1) + '秒';
+      minScoreValue.textContent = Number(minScore.value).toFixed(0) + '%';
+      inferIntervalValue.textContent = Number(inferInterval.value).toFixed(0) + 'ms';
+      engineLabel.textContent = engineMode.selectedOptions[0].textContent;
+    }
+    [nearThreshold, moveThreshold, stationarySeconds, minScore, inferInterval, engineMode].forEach(el => el.addEventListener('input', updateLabels));
+    updateLabels();
+    detectLocalYoloFiles().catch(() => { localModelText.textContent = '確認失敗'; });
+
+    function setStatus(text, mode = 'ok') {
+      statusBadge.textContent = text;
+      statusBadge.className = 'status-badge ' + (mode === 'danger' ? 'status-danger' : mode === 'warn' ? 'status-warn' : 'status-ok');
+    }
+    function setError(text) { errorText.textContent = text || 'なし'; }
+
+    function ensureAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+    function beep(freq = 880, duration = 0.12, type = 'sine', gainValue = 0.05, startOffset = 0) {
+      ensureAudio();
+      const t0 = audioCtx.currentTime + startOffset;
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(gainValue, t0 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0); osc.stop(t0 + duration + 0.02);
+    }
+    function playWarnSound(){ beep(900, 0.10, 'square', 0.055, 0); beep(900, 0.10, 'square', 0.055, 0.14); beep(900, 0.10, 'square', 0.055, 0.28); }
+    function playGoSound(){ beep(740, 0.10, 'sine', 0.05, 0); beep(1040, 0.16, 'sine', 0.05, 0.14); }
+
+    warnTestBtn.addEventListener('click', playWarnSound);
+    goTestBtn.addEventListener('click', playGoSound);
+    startBtn.addEventListener('click', startAll);
+    stopBtn.addEventListener('click', stopAll);
+    window.addEventListener('resize', resizeOverlay);
+    window.addEventListener('beforeunload', stopAll);
+
+async function checkUrlExists(url) {
+  try {
+    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function detectLocalYoloFiles() {
+  const base = './models/webnn/yolov8n';
+  const files = [
+    `${base}/config.json`,
+    `${base}/preprocessor_config.json`,
+    `${base}/onnx/model_fp16.onnx`,
+  ];
+  const results = await Promise.all(files.map(checkUrlExists));
+  const ok = results.every(Boolean);
+  localModelText.textContent = ok ? '配置済み' : '不足あり';
+  return { ok, files, results };
+}
+
+function formatMissingLocalFiles(check) {
+  return check.files.filter((_, i) => !check.results[i]).join(', ');
+}
+
+    async function loadCocoModel() {
+      if (cocoModel) return cocoModel;
+      modelText.textContent = 'COCO-SSD 読込中...';
+      cocoModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      modelText.textContent = 'COCO-SSD 読込完了';
+      return cocoModel;
+    }
+
+
+    async function tryCreatePipeline(modelId, opts = {}) {
+      return await pipeline('object-detection', modelId, opts);
+    }
+
+    async function createYoloPipeline() {
+  const localCheck = await detectLocalYoloFiles();
+  const attempts = [];
+  if (localCheck.ok) {
+    attempts.push({ name: 'local-fp16', model: './models/webnn/yolov8n', opts: { local_files_only: true, dtype: 'fp16' } });
+    attempts.push({ name: 'local-default', model: './models/webnn/yolov8n', opts: { local_files_only: true } });
+  } else {
+    setError('ローカルYOLO不足: ' + formatMissingLocalFiles(localCheck));
+  }
+  attempts.push({ name: 'remote-q8', model: 'webnn/yolov8n', opts: { dtype: 'q8' } });
+  attempts.push({ name: 'remote-default', model: 'webnn/yolov8n', opts: {} });
+  let lastErr = null;
+  for (const a of attempts) {
+    try {
+      modelText.textContent = `YOLO 読込中... (${a.name})`;
+      if (a.name.startsWith('local')) localModelText.textContent = '配置済み / 読込中';
+      setError('');
+      return await tryCreatePipeline(a.model, a.opts);
+    } catch (err) {
+      lastErr = err;
+      setError(`YOLO読込失敗(${a.name}): ` + readableError(err));
+    }
+  }
+  throw lastErr || new Error('YOLOモデルを読み込めませんでした');
+}
+
+async function loadYoloModel() {
+      if (yoloDetector) return yoloDetector;
+      modelText.textContent = 'YOLO 読込中...';
+      setStatus('YOLOモデル読込中', 'warn');
+      yoloDetector = await createYoloPipeline();
+      modelText.textContent = 'YOLO 読込完了';
+      return yoloDetector;
+    }
+
+    async function prepareEngine() {
+      const mode = engineMode.value;
+      setError('');
+      if (mode === 'coco') {
+        await loadCocoModel();
+        activeEngineText.textContent = 'COCO-SSD';
+        return 'coco';
+      }
+      if (mode === 'yolo') {
+        await loadYoloModel();
+        activeEngineText.textContent = 'YOLOv8n';
+        return 'yolo';
+      }
+      try {
+        await loadYoloModel();
+        activeEngineText.textContent = 'YOLOv8n';
+        return 'yolo';
+      } catch (err) {
+        const msg = readableError(err);
+        setError('YOLO失敗 → COCOへ切替: ' + msg);
+        await loadCocoModel();
+        activeEngineText.textContent = 'COCO-SSD (自動切替)';
+        return 'coco';
+      }
+    }
+
+    async function startCamera() {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+      });
+      video.srcObject = stream;
+      await video.play();
+      resizeOverlay();
+    }
+
+    async function startAll() {
+      if (running) return;
+      if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+        alert('このブラウザはカメラ取得に対応していません。');
+        return;
+      }
+      try {
+        ensureAudio();
+        startBtn.disabled = true;
+        setStatus('カメラ開始中', 'warn');
+        await startCamera();
+        setStatus('AIモデル準備中', 'warn');
+        const active = await prepareEngine();
+        running = true;
+        lastInferAt = 0;
+        smoothedNear = 0; smoothedMotion = 0; prevTarget = null; targetLostCount = 0; stoppedStart = null; wasStopped = false; lastWarnTime = 0; lastGoTime = 0;
+        stopBtn.disabled = false;
+        setStatus(active === 'yolo' ? 'YOLO監視中' : 'COCO監視中', 'ok');
+        loop();
+      } catch (err) {
+        const msg = readableError(err);
+        console.error(err);
+        setError(msg);
+        alert('開始できませんでした。\n' + msg + '\nローカルYOLOを使う場合は ./models/webnn/yolov8n/onnx/model_fp16.onnx が置かれているか確認してください。');
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        setStatus('開始失敗', 'danger');
+      }
+    }
+
+    function stopAll() {
+      running = false;
+      if (rafId) cancelAnimationFrame(rafId);
+      if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+      video.srcObject = null;
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      startBtn.disabled = false;
+      stopBtn.disabled = true;
+      detectionBusy = false;
+      targetText.textContent = 'なし'; nearScoreText.textContent = '0%'; motionText.textContent = '0%'; stoppedText.textContent = 'いいえ'; goStateText.textContent = '待機中';
+      activeEngineText.textContent = '未開始';
+      setStatus('停止中', 'ok');
+    }
+
+    function resizeOverlay() {
+      const rect = overlay.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      overlay.width = Math.round(rect.width * ratio);
+      overlay.height = Math.round(rect.height * ratio);
+      overlayCtx.setTransform(1,0,0,1,0,0);
+      overlayCtx.scale(ratio, ratio);
+    }
+
+    function loop() {
+      if (!running) return;
+      const now = performance.now();
+      if (!detectionBusy && now - lastInferAt >= Number(inferInterval.value)) detectFrame();
+      rafId = requestAnimationFrame(loop);
+    }
+
+    async function detectFrame() {
+      if (!video.videoWidth || !video.videoHeight) return;
+      detectionBusy = true;
+      lastInferAt = performance.now();
+      try {
+        const mode = activeEngineText.textContent.includes('YOLO') ? 'yolo' : 'coco';
+        const preds = mode === 'yolo' ? await detectWithYolo() : await detectWithCoco();
+        handlePredictions(preds || []);
+      } catch (err) {
+        console.error(err);
+        const msg = readableError(err);
+        setError(msg);
+        if (engineMode.value !== 'coco' && activeEngineText.textContent.includes('YOLO')) {
+          setStatus('YOLO失敗→COCO切替中', 'warn');
+          try {
+            await loadCocoModel();
+            activeEngineText.textContent = 'COCO-SSD (自動切替)';
+            setStatus('COCOへ切替済み', 'warn');
+          } catch (err2) {
+            setError(readableError(err2));
+            setStatus('AI推論エラー', 'danger');
+          }
+        } else {
+          setStatus('AI推論エラー', 'danger');
+        }
+      } finally {
+        detectionBusy = false;
+      }
+    }
+
+    async function detectWithCoco() {
+      const mdl = await loadCocoModel();
+      const raw = await mdl.detect(video, undefined, Number(minScore.value) / 100);
+      return raw.map(p => ({ class: p.class, score: p.score, bbox: p.bbox }));
+    }
+
+    async function detectWithYolo() {
+      const detector = await loadYoloModel();
+      const maxW = 640;
+      const scale = Math.min(1, maxW / video.videoWidth);
+      offscreen.width = Math.max(320, Math.round(video.videoWidth * scale));
+      offscreen.height = Math.max(180, Math.round(video.videoHeight * scale));
+      offCtx.drawImage(video, 0, 0, offscreen.width, offscreen.height);
+      const dataUrl = offscreen.toDataURL('image/jpeg', 0.8);
+      const output = await detector(dataUrl, { threshold: Number(minScore.value) / 100, percentage: true });
+      return (output || []).map(item => ({
+        class: normalizeLabel(item.label),
+        score: item.score,
+        bbox: [
+          item.box.xmin * video.videoWidth,
+          item.box.ymin * video.videoHeight,
+          (item.box.xmax - item.box.xmin) * video.videoWidth,
+          (item.box.ymax - item.box.ymin) * video.videoHeight,
+        ]
+      }));
+    }
+
+    function normalizeLabel(label) {
+      const l = String(label || '').toLowerCase();
+      if (l.includes('motor')) return 'motorcycle';
+      if (l === 'motorbike') return 'motorcycle';
+      return l;
+    }
+
+    function handlePredictions(preds) {
+      const now = performance.now();
+      const minScoreValueNum = Number(minScore.value) / 100;
+      const vehicleClasses = new Set(['car', 'truck', 'bus', 'motorcycle']);
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      const centerX = vw / 2;
+      const centerBiasW = vw * 0.42;
+      const horizonY = vh * 0.18;
+
+      const vehicles = preds.filter(p => vehicleClasses.has(p.class) && p.score >= minScoreValueNum).map(p => {
+        const [x,y,w,h] = p.bbox;
+        const cx = x + w/2, cy = y + h/2;
+        const areaPct = (w*h)/(vw*vh)*100;
+        const centerPenalty = Math.abs(cx - centerX) / centerBiasW;
+        const bottomBias = (y + h) / vh;
+        const sizeBias = Math.min(1, areaPct / 18);
+        const score = (1 - Math.min(1.5, centerPenalty)) * 0.55 + bottomBias * 0.25 + sizeBias * 0.2 + p.score * 0.2;
+        return { ...p, x, y, w, h, cx, cy, areaPct, rankScore: score };
+      }).filter(v => v.cy > horizonY).sort((a,b) => b.rankScore - a.rankScore);
+
+      let target = vehicles[0] || null;
+      if (!target && prevTarget && targetLostCount < 8) { targetLostCount += 1; target = { ...prevTarget, stale: true }; }
+      else if (target) targetLostCount = 0;
+
+      let nearScore = 0, movementPct = 0, launchDetected = false, nearDetected = false, stoppedEnough = false;
+      if (target) {
+        nearScore = computeNearScore(target, vw, vh);
+        movementPct = computeMovement(target, prevTarget, vw, vh);
+        smoothedNear = smoothedNear * 0.75 + nearScore * 0.25;
+        smoothedMotion = smoothedMotion * 0.68 + movementPct * 0.32;
+        const moveTh = Number(moveThreshold.value);
+        const nearTh = Number(nearThreshold.value);
+        const stationaryMs = Number(stationarySeconds.value) * 1000;
+        const isStill = smoothedMotion < moveTh;
+        if (isStill) { if (!stoppedStart) stoppedStart = now; }
+        else { if (!target.stale) stoppedStart = null; wasStopped = false; }
+        stoppedEnough = !!stoppedStart && (now - stoppedStart >= stationaryMs);
+        if (stoppedEnough) wasStopped = true;
+        launchDetected = wasStopped && smoothedMotion > moveTh * 1.85 && !target.stale;
+        nearDetected = smoothedNear > nearTh;
+        if (nearDetected && now - lastWarnTime > 1800) { playWarnSound(); lastWarnTime = now; }
+        if (launchDetected && now - lastGoTime > 2200) { playGoSound(); lastGoTime = now; wasStopped = false; stoppedStart = null; }
+        prevTarget = { x: target.x, y: target.y, w: target.w, h: target.h, cx: target.cx, cy: target.cy, class: target.class, score: target.score };
+      } else {
+        smoothedNear *= 0.88; smoothedMotion *= 0.72; prevTarget = null; stoppedStart = null; wasStopped = false;
+      }
+
+      drawOverlay(vehicles, target, nearDetected, launchDetected, vw, vh);
+      targetText.textContent = target ? `${labelJa(target.class)} ${Math.round(target.score * 100)}%${target.stale ? ' (保持)' : ''}` : 'なし';
+      nearScoreText.textContent = smoothedNear.toFixed(1) + '%';
+      motionText.textContent = smoothedMotion.toFixed(1) + '%';
+      stoppedText.textContent = stoppedEnough ? 'はい' : 'いいえ';
+      goStateText.textContent = launchDetected ? '前車発進を検知' : stoppedEnough ? '停止監視中' : '待機中';
+      if (launchDetected) setStatus('前車が動きました', 'ok');
+      else if (nearDetected) setStatus('近すぎる可能性', 'danger');
+      else if (stoppedEnough) setStatus('前車停止を監視中', 'warn');
+      else if (target) setStatus('前走車候補を追跡中', 'ok');
+      else setStatus('前走車候補なし', 'warn');
+    }
+
+    function computeNearScore(target, vw, vh) {
+      const areaPct = (target.w * target.h) / (vw * vh) * 100;
+      const boxBottomPct = ((target.y + target.h) / vh) * 100;
+      const centered = 1 - Math.min(1, Math.abs(target.cx - vw / 2) / (vw * 0.35));
+      let score = areaPct * 1.7 + Math.max(0, boxBottomPct - 45) * 0.45 + centered * 16;
+      if (target.class === 'truck' || target.class === 'bus') score += 3;
+      return Math.max(0, Math.min(100, score));
+    }
+    function computeMovement(target, prev, vw, vh) {
+      if (!target || !prev) return 0;
+      const dx = Math.abs(target.cx - prev.cx) / vw * 100;
+      const dy = Math.abs(target.cy - prev.cy) / vh * 100;
+      const dw = Math.abs(target.w - prev.w) / vw * 100;
+      const dh = Math.abs(target.h - prev.h) / vh * 100;
+      return dx * 0.7 + dy * 1.1 + dw * 1.8 + dh * 2.2;
+    }
+
+    function drawOverlay(vehicles, target, nearDetected, launchDetected, vw, vh) {
+      const w = overlay.clientWidth, h = overlay.clientHeight;
+      overlayCtx.clearRect(0,0,w,h); if (!w || !h) return;
+      const sx = w / vw, sy = h / vh;
+      overlayCtx.strokeStyle = 'rgba(255,255,255,0.18)'; overlayCtx.lineWidth = 1; overlayCtx.beginPath(); overlayCtx.moveTo(w/2, h*0.1); overlayCtx.lineTo(w/2, h*0.92); overlayCtx.stroke();
+      overlayCtx.strokeStyle = 'rgba(96,165,250,0.25)'; overlayCtx.strokeRect(w*0.29, h*0.18, w*0.42, h*0.68);
+      vehicles.forEach(v => {
+        const isTarget = target && Math.abs(v.cx - target.cx) < 1 && Math.abs(v.cy - target.cy) < 1 && Math.abs(v.w - target.w) < 1;
+        overlayCtx.strokeStyle = isTarget ? (nearDetected ? 'rgba(239,68,68,0.98)' : launchDetected ? 'rgba(45,212,191,0.98)' : 'rgba(250,204,21,0.98)') : 'rgba(148,163,184,0.55)';
+        overlayCtx.lineWidth = isTarget ? 4 : 2;
+        overlayCtx.setLineDash(isTarget ? [] : [6,4]);
+        overlayCtx.strokeRect(v.x*sx, v.y*sy, v.w*sx, v.h*sy);
+        overlayCtx.setLineDash([]);
+        overlayCtx.fillStyle = isTarget ? 'rgba(0,0,0,0.62)' : 'rgba(0,0,0,0.42)';
+        const label = `${labelJa(v.class)} ${Math.round(v.score * 100)}%`;
+        const tx = v.x*sx, ty = Math.max(20, v.y*sy - 22);
+        overlayCtx.fillRect(tx, ty - 16, Math.min(150, Math.max(85, v.w * sx)), 18);
+        overlayCtx.fillStyle = '#fff'; overlayCtx.font = 'bold 12px system-ui'; overlayCtx.fillText(label, tx + 4, ty - 3);
+      });
+      if (target) {
+        overlayCtx.fillStyle = 'rgba(0,0,0,0.48)'; overlayCtx.fillRect(10, h - 78, 300, 66);
+        overlayCtx.fillStyle = '#fff'; overlayCtx.font = 'bold 14px system-ui';
+        overlayCtx.fillText('前車候補: ' + labelJa(target.class), 18, h - 50);
+        overlayCtx.fillText('接近: ' + smoothedNear.toFixed(1) + '%', 18, h - 30);
+        overlayCtx.fillText('移動: ' + smoothedMotion.toFixed(1) + '%', 150, h - 30);
+      }
+    }
+
+    function labelJa(cls) { return ({ car:'車', truck:'トラック', bus:'バス', motorcycle:'バイク' })[cls] || cls; }
+    function readableError(err) {
+      const msg = String(err?.message || err || '不明なエラー');
+      if (/fetch/i.test(msg)) return 'モデル取得失敗。通信制限、CDN遮断、オフラインの可能性があります。';
+      if (/cross-origin|cors/i.test(msg)) return 'CORS制限でモデル読込に失敗しました。GitHub Pages など HTTPS 公開で試してください。';
+      if (/WebAssembly|wasm/i.test(msg)) return '端末のWASM実行まわりで失敗しました。推論間隔を長くするか COCO-SSD を使ってください。';
+      if (/no available backend|backend/i.test(msg)) return '推論バックエンド初期化に失敗しました。別ブラウザか COCO-SSD を試してください。';
+      return msg;
+    }
+    let deferredPrompt = null;
+    const installBtn = document.getElementById('installBtn');
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      if (installBtn) installBtn.style.display = 'inline-block';
+    });
+    installBtn?.addEventListener('click', async () => {
+      if (!deferredPrompt) return;
+      deferredPrompt.prompt();
+      try { await deferredPrompt.userChoice; } catch {}
+      deferredPrompt = null;
+      installBtn.style.display = 'none';
+    });
+    window.addEventListener('appinstalled', () => {
+      if (installBtn) installBtn.style.display = 'none';
+    });
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(err => {
+          console.warn('SW registration failed:', err);
+        });
+      });
+    }
+
+  </script>
+</body>
+</html>
