@@ -40,7 +40,7 @@
     .tips { padding:0 12px 12px; color:var(--muted); line-height:1.55; font-size:.9rem; }
   </style>
 
-  <link rel="manifest" href="manifest_pwa_v2.json">
+  <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="運転支援">
@@ -279,7 +279,7 @@
       './',
       './index.html',
       './manifest_pwa_v2.json',
-      './service-worker_pwa_v2.js',
+      './service-worker.js',
       './models/yolov8n.onnx',
       'https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js'
     ];
@@ -313,7 +313,7 @@
   async function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) { swStateEl.textContent = '非対応'; return; }
     try {
-      await navigator.serviceWorker.register('./service-worker_pwa_v2.js');
+      await navigator.serviceWorker.register('./service-worker.js');
       swStateEl.textContent = '登録済み';
     } catch (e) {
       swStateEl.textContent = '失敗';
